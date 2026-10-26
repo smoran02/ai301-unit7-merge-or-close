@@ -669,6 +669,8 @@ function report(type, extra = {}) {
     health: state.health, goodwill: state.goodwill, hints: state.hints,
     elapsed: (state.finishedAt || Date.now()) - state.startedAt, finished: !!state.finishedAt,
     marks: marks(state),
+    // The day's clock as the team sees it: time left, below 0 once it's over.
+    clock: state.phase === 'queue' && state.clockEndsAt ? state.clockEndsAt - Date.now() : null,
   }, extra));
   try {
     fetch(CFG.reportUrl, {
