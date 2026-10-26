@@ -607,6 +607,14 @@ function d4Next(s) {
 }
 function finish(s, now) { s.finishedAt = now; s.phase = 'done'; }
 
+// The start form asks for the breakout room number, so "4", "Room 4" and
+// "Breakout room 4" all become "Team 4". Anything else is kept as typed.
+function roomName(raw) {
+  const t = String(raw).replace(/\s+/g, ' ').trim();
+  const m = t.match(/^(?:breakout ?)?(?:room|team|group)? ?#? ?(\d{1,3})$/i);
+  return m ? `Team ${Number(m[1])}` : t;
+}
+
 // The board's progress strip, one group per day: each PR's call
 // (g right, r wrong, . not yet), then each day-4 step by its first try.
 // Example: "201:g 202:r 203:. 204:. | ... | open:g row:. ..."
@@ -623,7 +631,7 @@ if (typeof window !== 'undefined') {
   window.MOC_CORE = {
     DATA, PRS, OT, answer, steps, dayPrs, mainPrs, rulesFor, judge, newState, openQueue, timeLeft, overBy,
     decide, endDay, nextPr, afterNotes, startOvertime, useHint, hintWait, rightCount, dayRight, d4Submit, d4Next, finish,
-    marks,
+    marks, roomName,
   };
 }
 if (typeof document === 'undefined') return;
@@ -882,12 +890,12 @@ function renderStart() {
   const saved = store.get(CFG.storeKey);
   const hasSave = !!(saved && saved.team && saved.v === 1);
   const resume = hasSave
-    ? `<div class="panel"><p>Welcome back, <b>${esc(saved.team)}</b>. ${saved.phase === 'done' ? 'You finished the game.' : saved.day === OT ? "You're in overtime." : saved.day === 4 ? "You're on day 4, opening your own PR." : `You're on day ${saved.day}.`}</p>
+    ? `<div class="panel"><p>Welcome back, <b>${esc(teamLabel(saved.team))}</b>. ${saved.phase === 'done' ? 'You finished the game.' : saved.day === OT ? "You're in overtime." : saved.day === 4 ? "You're on day 4, opening your own PR." : `You're on day ${saved.day}.`}</p>
        <div class="row"><button class="cta" data-act="resume" type="button">Keep going</button>${resetButton('Start over', 'Yes, erase this game')}</div></div>`
     : '';
   const form = hasSave ? '' : `<form class="panel" id="team-form" autocomplete="off">
-      <label for="team-name">Team name</label>
-      <p class="field-help">Your breakout room number works, like Team 4.</p>
+      <label for="team-name">Breakout room number</label>
+      <p class="field-help">It's in your breakout room's name. For Room 4, type 4.</p>
       <div class="row"><input type="text" id="team-name" maxlength="24" required><button class="cta" type="submit">Start the game</button></div>
     </form>`;
   show('start', `
@@ -1180,7 +1188,7 @@ function confetti() {
 view.addEventListener('submit', (e) => {
   if (e.target.id !== 'team-form') return;
   e.preventDefault();
-  const name = $('team-name').value.replace(/\s+/g, ' ').trim();
+  const name = roomName($('team-name').value);
   if (!name) return;
   state = newState(name, Date.now(), newId());
   shown = { health: null, goodwill: null };
