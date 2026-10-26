@@ -671,6 +671,8 @@ function report(type, extra = {}) {
     marks: marks(state),
     // The day's clock as the team sees it: time left, below 0 once it's over.
     clock: state.phase === 'queue' && state.clockEndsAt ? state.clockEndsAt - Date.now() : null,
+    // Reports can arrive out of order; the board keeps the newest by this.
+    at: Date.now(),
   }, extra));
   try {
     fetch(CFG.reportUrl, {
