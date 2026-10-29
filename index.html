@@ -753,29 +753,37 @@ function newId() {
 }
 
 // One snapshot per event for the instructor's board. Fire and forget.
-// Overtime comes after the finish, so the board keeps showing the team as done.
+// Overtime and the boss PR come after the finish, so the board keeps showing
+// the team as done and reads them from their own fields.
 function report(type, extra = {}) {
-  if (!CFG.reportUrl || !state || state.day === OT) return;
-  const where = state.phase === 'done' ? 'done' : state.day === 4 ? 'yourpr' : `d${state.day}`;
-  const body = JSON.stringify(Object.assign({
-    team: state.id, name: state.team, type, where, day: state.day,
-    pr: state.phase === 'queue' ? state.idx + 1 : 0,
-    of: state.day <= 3 ? dayPrs(state.day).length : 0,
-    right: rightCount(state), decided: Object.keys(state.decisions).length,
-    health: state.health, goodwill: state.goodwill, hints: state.hints,
-    elapsed: (state.finishedAt || Date.now()) - state.startedAt, finished: !!state.finishedAt,
-    marks: marks(state),
-    // The day's clock as the team sees it: time left, below 0 once it's over.
-    clock: state.phase === 'queue' && state.clockEndsAt ? state.clockEndsAt - Date.now() : null,
-    // Reports can arrive out of order; the board keeps the newest by this.
-    at: Date.now(),
-  }, extra));
+  if (!CFG.reportUrl || !state) return;
   try {
+    const over = !!state.finishedAt;
+    const where = over || state.phase === 'done' ? 'done' : state.day === 4 ? 'yourpr' : `d${state.day}`;
+    const otPrs = dayPrs(OT);
+    const body = JSON.stringify(Object.assign({
+      team: state.id, name: state.team, type, where, day: state.day,
+      pr: !over && state.phase === 'queue' ? state.idx + 1 : 0,
+      of: state.day <= 3 ? dayPrs(state.day).length : 0,
+      right: rightCount(state), decided: mainPrs().filter((p) => state.decisions[p.num]).length,
+      health: state.health, goodwill: state.goodwill, hints: state.hints,
+      elapsed: (state.finishedAt || Date.now()) - state.startedAt, finished: over,
+      marks: marks(state),
+      // The day's clock as the team sees it: time left, below 0 once it's over.
+      clock: !over && state.phase === 'queue' && state.clockEndsAt ? state.clockEndsAt - Date.now() : null,
+      // Overtime and the boss PR: 0 not started, 1 playing, 2 done.
+      ot: state.overtime === 'done' ? 2 : state.overtime === 'playing' ? 1 : 0,
+      otDone: otPrs.filter((p) => state.decisions[p.num]).length, otRight: dayRight(state, OT), otOf: otPrs.length,
+      boss: state.boss ? (state.boss.closed ? 2 : 1) : 0,
+      bossFound: state.boss ? bossCount(state, 'rule') : 0, bossOf: DATA.boss.rules,
+      // Reports can arrive out of order; the board keeps the newest by this.
+      at: Date.now(),
+    }, extra));
     fetch(CFG.reportUrl, {
       method: 'POST', mode: 'no-cors', keepalive: true,
       headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body,
     }).catch(() => {});
-  } catch (e) { /* offline or blocked: keep playing */ }
+  } catch (e) { /* offline, blocked, or an old save: keep playing */ }
 }
 
 // ------------------------------------------------------------ pieces
@@ -1505,15 +1513,15 @@ view.addEventListener('click', (e) => {
       d4Next(state); save(); render(); break;
     case 'd4-finish':
       // The board counts the game as finished here; overtime follows.
-      finish(state, now); report('finish'); startOvertime(state); save(); render(); break;
+      finish(state, now); startOvertime(state); report('finish'); save(); render(); break;
     case 'ot-start':
-      startOvertime(state); save(); render(); break;
+      startOvertime(state); save(); report('day'); render(); break;
     case 'ot-skip':
       skipOvertime(state); ui = { closing: false, reason: null, hintArmed: 0, resetArmed: 0 };
-      save(); render(); break;
+      save(); report('day'); render(); break;
     case 'boss-start':
       startBoss(state); ui = { closing: false, reason: null, hintArmed: 0, resetArmed: 0 };
-      save(); render(); break;
+      save(); report('boss'); render(); break;
     case 'boss-spot': {
       const id = b.dataset.r;
       ui.bossFrom = focusKey(b);
@@ -1527,7 +1535,7 @@ view.addEventListener('click', (e) => {
       const r = bossPick(state, id, b.dataset.r);
       ui.bossPick = null;
       ui.bossRes = Object.assign({ id, pick: b.dataset.r, misses: state.boss.misses }, r);
-      save(); render(false); break;
+      save(); if (r.kind === 'hit') report('boss'); render(false); break;
     }
     case 'boss-hint': {
       const h = bossHint(state);
@@ -1545,7 +1553,7 @@ view.addEventListener('click', (e) => {
     case 'boss-ok':
       ui.bossRes = null; render(false); refocus(ui.bossFrom); break;
     case 'boss-win':
-      bossClose(state); ui.bossRes = null; ui.bossWin = true; save(); render(false); confetti(); break;
+      bossClose(state); ui.bossRes = null; ui.bossWin = true; save(); report('boss'); render(false); confetti(); break;
     case 'boss-keep':
       ui.bossWin = false; render(false); refocus(ui.bossFrom); break;
     case 'boss-exit':
